@@ -282,7 +282,13 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 const jq =s=>esc(s).replace(/'/g,"\\'");
 const shuffle=a=>a.map(v=>[Math.random(),v]).sort((x,y)=>x[0]-y[0]).map(v=>v[1]);
 const rnd=a=>a[(Math.random()*a.length)|0];
-const isDec=(d,n)=>{const i=d.ing.find(x=>x.n===n);return !!(i&&i.dec);};
+// в тренажёре без граммовок: украшения, доливы (вода, содовая, тоник, кола, игристое), заварка чая
+const NOQ={'Содовая':'долив','Вода газ':'долив','Вода газ. ПЭТ':'долив','Вода':'долив','Тоник ПЭТ':'долив',
+  'Кола ПЭТ':'долив','Игристое хаус':'долив','Вода из кофемашины':'вода',
+  'Чай чёрный':'заварка','Чай каркаде':'заварка','Чай сенча':'заварка'};
+const NOQ_KEEP=new Set(['Pornstar Martini|Игристое хаус']);   // там игристое — отдельный шот 50, не долив
+const qlab=(d,i)=>i.dec?'украшение':(NOQ[i.n]&&!NOQ_KEEP.has(d.name+'|'+i.n))?NOQ[i.n]:'';
+const isDec=(d,n)=>{const i=d.ing.find(x=>x.n===n);return !!(i&&qlab(d,i));};
 const num=q=>{const m=String(q).replace(',','.').match(/[\d.]+/);return m?parseFloat(m[0]):NaN;};
 
 async function load(){
@@ -348,8 +354,8 @@ function newRound(){
 
 function makeFake(d){
   const lines=[{k:'Бокал',v:d.glass},{k:'Техника',v:d.tech},
-    ...d.ing.map(i=>({k:i.n,v:i.dec?'':String(i.q),ing:true,dec:!!i.dec}))];
-  const qtyIx=d.ing.map((i,ix)=>i.dec?-1:2+ix).filter(x=>x>0);
+    ...d.ing.map(i=>({k:i.n,v:qlab(d,i)||String(i.q),ing:true,dec:!!qlab(d,i)}))];
+  const qtyIx=d.ing.map((i,ix)=>qlab(d,i)?-1:2+ix).filter(x=>x>0);
   const kinds=qtyIx.length?['glass','tech','ing','qty','qty']:['glass','tech','ing'];
   const kind=rnd(kinds);
   let bad, was;
@@ -381,7 +387,7 @@ function grade(){
     for(const i of d.ing){
       const got=R.picked.find(p=>p.n===i.n);
       if(!got){ add(false,'',i.n+' — не налито',i.n+' '+i.q); continue; }
-      if(!S.qty||i.dec){ add(true,'',i.n+(i.dec?'':' '+i.q),''); continue; }
+      if(!S.qty||qlab(d,i)){ add(true,'',i.n+(qlab(d,i)?' · '+qlab(d,i):' '+i.q),''); continue; }
       const a=num(got.q),b=num(i.q);
       add(!isNaN(a)&&Math.abs(a-b)<0.001,'',i.n+' '+(got.q||'—'),i.n+' '+i.q);
     }
@@ -390,7 +396,7 @@ function grade(){
   }
   if(R.mode==='rev') add(R.answer===d.name,'Ответ',R.answer||'—',d.name);
   if(R.mode==='num') d.ing.forEach((i,ix)=>{
-    if(i.dec) return;
+    if(qlab(d,i)) return;
     const a=num(R.vals[ix]),b=num(i.q);
     add(!isNaN(a)&&Math.abs(a-b)<0.001,'',i.n+' '+(R.vals[ix]||'—'),i.n+' '+i.q);
   });
@@ -897,7 +903,7 @@ function roundHTML(){
       <div class="opts">${R.chips.map(n=>`<button class="opt${R.picked.some(p=>p.n===n)?' on':''}" onclick="tog('${jq(n)}')">${esc(n)}</button>`).join('')}</div>
       <div class="built">${R.picked.length?R.picked.map((p,ix)=>`
         <div class="row"><span class="nm">${esc(p.n)}</span>
-        ${S.qty&&!isDec(d,p.n)?`<input inputmode="decimal" value="${esc(p.q)}" placeholder="0" oninput="R.picked[${ix}].q=this.value;upd()"><span class="unit">мл/г</span>`:`<span class="unit" style="width:auto">${S.qty&&isDec(d,p.n)?'украшение':''}</span>`}
+        ${S.qty&&!isDec(d,p.n)?`<input inputmode="decimal" value="${esc(p.q)}" placeholder="0" oninput="R.picked[${ix}].q=this.value;upd()"><span class="unit">мл/г</span>`:`<span class="unit" style="width:auto">${S.qty&&isDec(d,p.n)?qlab(d,d.ing.find(x=>x.n===p.n)):''}</span>`}
         <button class="x" onclick="tog('${jq(p.n)}')" aria-label="убрать">×</button></div>`).join('')
         :'<p class="empty">Пока ничего не налито.</p>'}</div></div>`;
     if(R.garnOpts) h+=step(d.cat==='Кофе'?'Подача':'Украшение',R.garnOpts.map(g=>optBtn(g,'garnish')).join(''));
@@ -906,7 +912,7 @@ function roundHTML(){
   if(R.mode==='rev'){
     let h=`<div class="guest"><div class="face">🍸</div><div class="bubble">
       <div class="who">На баре стоит собранный напиток</div>
-      <p>${d.glass} · ${d.tech}<br>${d.ing.map(i=>i.dec?esc(i.n):esc(i.n)+' <b class="order">'+esc(i.q)+'</b>').join('<br>')}</p></div></div>`;
+      <p>${d.glass} · ${d.tech}<br>${d.ing.map(i=>qlab(d,i)?esc(i.n)+' · '+qlab(d,i):esc(i.n)+' <b class="order">'+esc(i.q)+'</b>').join('<br>')}</p></div></div>`;
     h+=`<div class="step"><h2>Что это?</h2><div class="opts">
       ${R.opts.map(n=>`<button class="opt wide" aria-pressed="${R.answer===n}" onclick="setF('answer','${jq(n)}')">${esc(n)}</button>`).join('')}
     </div></div>`;
@@ -916,8 +922,8 @@ function roundHTML(){
     let h=`<div class="guest"><div class="face">📋</div><div class="bubble">
       <div class="who">Карта · ${esc(d.cat)}</div><p><b class="order">${esc(d.name)}</b><br>${esc(d.glass)} · ${esc(d.tech)}</p></div></div>`;
     h+=`<div class="step"><h2>Дозировки</h2><div class="built">
-      ${d.ing.map((i,ix)=>i.dec?`<div class="row"><span class="nm">${esc(i.n)}</span>
-        <span class="unit" style="width:auto">украшение</span></div>`
+      ${d.ing.map((i,ix)=>qlab(d,i)?`<div class="row"><span class="nm">${esc(i.n)}</span>
+        <span class="unit" style="width:auto">${qlab(d,i)}</span></div>`
         :`<div class="row"><span class="nm">${esc(i.n)}</span>
         <input inputmode="decimal" value="${esc(R.vals[ix])}" placeholder="0" oninput="R.vals[${ix}]=this.value;upd()">
         <span class="unit">мл/г</span></div>`).join('')}</div></div>`;
@@ -938,7 +944,7 @@ function readyNow(){
   if(!R) return false;
   if(R.mode==='shift') return !!(R.glass&&R.tech&&R.picked.length);
   if(R.mode==='rev')   return !!R.answer;
-  if(R.mode==='num')   return R.d.ing.some((i,ix)=>!i.dec&&String(R.vals[ix]).trim()!=='');
+  if(R.mode==='num')   return R.d.ing.some((i,ix)=>!qlab(R.d,i)&&String(R.vals[ix]).trim()!=='');
   if(R.mode==='err')   return R.answer!==null;
   return true;
 }
@@ -972,7 +978,7 @@ function resultHTML(){
       <span>${l.label?esc(l.label)+': ':''}${esc(l.val)}${l.ok?'':` <span class="fix">→ ${esc(l.fix)}</span>`}</span></div>`;
   }
   if(!perfect && (R.mode==='rev'||R.mode==='err')){
-    h+=`<div class="sep"></div>${d.ing.map(i=>`<div class="rline"><span class="mark">·</span><span>${esc(i.n)}${i.dec?'':' '+esc(i.q)}</span></div>`).join('')}`;
+    h+=`<div class="sep"></div>${d.ing.map(i=>`<div class="rline"><span class="mark">·</span><span>${esc(i.n)}${qlab(d,i)?' · '+qlab(d,i):' '+esc(i.q)}</span></div>`).join('')}`;
   }
   h+=`<div class="sep"></div><span class="stamp ${perfect?'good':'bad'}">${perfect?'ПРИНЯТО':'НА ПЕРЕДЕЛКУ'}</span>`;
   if(!perfect&&R.mode==='shift'&&d.steps&&d.steps.length)
